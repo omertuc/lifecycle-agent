@@ -64,7 +64,9 @@ func buildKernelArgumentsFromMCOFile(path string) ([]string, error) {
 		if val, err := json.Marshal(karg); err != nil {
 			return nil, fmt.Errorf("failed to marshal karg %s: %w", karg, err)
 		} else {
-			args[2*i] = "--karg-append"
+			// JAVI
+			// args[2*i] = "--karg-append"
+			args[2*i] = "--karg"
 			args[2*i+1] = string(val)
 		}
 	}
@@ -157,16 +159,19 @@ func SetupStateroot(log logr.Logger, ops ops.Ops, ostreeClient ostreeclient.ICli
 		return fmt.Errorf("failed to mount seed image: %w", err)
 	}
 
+	mountpoint = filepath.Join(mountpoint, "var/tmp/seed")
+
 	ostreeRepo := filepath.Join(workspace, "ostree")
 	if err = os.Mkdir(common.PathOutsideChroot(ostreeRepo), 0o700); err != nil {
 		return fmt.Errorf("failed to create ostree repo directory: %w", err)
 	}
 
-	if err := ops.ExtractTarWithSELinux(
-		fmt.Sprintf("%s/ostree.tgz", mountpoint), ostreeRepo,
-	); err != nil {
-		return fmt.Errorf("failed to extract ostree.tgz: %w", err)
-	}
+	// JAVI
+	// if err := ops.ExtractTarWithSELinux(
+	// 	fmt.Sprintf("%s/ostree.tgz", mountpoint), ostreeRepo,
+	// ); err != nil {
+	// 	return fmt.Errorf("failed to extract ostree.tgz: %w", err)
+	// }
 
 	// example:
 	// seedBootedID: rhcos-ed4ab3244a76c6503a21441da650634b5abd25aba4255ca116782b2b3020519c.1
@@ -180,7 +185,8 @@ func SetupStateroot(log logr.Logger, ops ops.Ops, ostreeClient ostreeclient.ICli
 	if err != nil {
 		return err
 	}
-	seedBootedRef := strings.Split(seedBootedDeployment, ".")[0]
+	// JAVI
+	// seedBootedRef := strings.Split(seedBootedDeployment, ".")[0]
 
 	version, err := getVersionFromSeedClusterInfoFile(filepath.Join(common.PathOutsideChroot(mountpoint), common.SeedClusterInfoFileName))
 	if err != nil {
@@ -194,9 +200,10 @@ func SetupStateroot(log logr.Logger, ops ops.Ops, ostreeClient ostreeclient.ICli
 
 	osname := common.GetStaterootName(expectedVersion)
 
-	if err = ostreeClient.PullLocal(ostreeRepo); err != nil {
-		return fmt.Errorf("failed ostree pull-local: %w", err)
-	}
+	// JAVI
+	// if err = ostreeClient.PullLocal(ostreeRepo); err != nil {
+	// 	return fmt.Errorf("failed ostree pull-local: %w", err)
+	// }
 
 	if err = ostreeClient.OSInit(osname); err != nil {
 		return fmt.Errorf("failed ostree admin os-init: %w", err)
@@ -212,9 +219,14 @@ func SetupStateroot(log logr.Logger, ops ops.Ops, ostreeClient ostreeclient.ICli
 		kargs = append(kargs, "--karg", "ibu="+expectedVersion)
 	}
 
-	if err = ostreeClient.Deploy(osname, seedBootedRef, kargs, rpmOstreeClient, ibi); err != nil {
-		return fmt.Errorf("failed ostree admin deploy: %w", err)
+	if err = ostreeClient.DeployImage(osname, seedImage, kargs, rpmOstreeClient, ibi); err != nil {
+		return fmt.Errorf("failed ostree container image deploy: %w", err)
 	}
+
+	// JAVI
+	// if err = ostreeClient.Deploy(osname, seedBootedRef, kargs, rpmOstreeClient, ibi); err != nil {
+	// 	return fmt.Errorf("failed ostree admin deploy: %w", err)
+	// }
 
 	deploymentDir, err := ostreeClient.GetDeploymentDir(osname)
 	if err != nil {

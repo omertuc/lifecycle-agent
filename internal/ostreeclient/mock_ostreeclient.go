@@ -52,6 +52,20 @@ func (mr *MockIClientMockRecorder) Deploy(osname, refsepc, kargs, rpmOstreeClien
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Deploy", reflect.TypeOf((*MockIClient)(nil).Deploy), osname, refsepc, kargs, rpmOstreeClient, ibi)
 }
 
+// DeployImage mocks base method.
+func (m *MockIClient) DeployImage(osname, imgRef string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeployImage", osname, imgRef, kargs, rpmOstreeClient, ibi)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeployImage indicates an expected call of DeployImage.
+func (mr *MockIClientMockRecorder) DeployImage(osname, imgRef, kargs, rpmOstreeClient, ibi any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeployImage", reflect.TypeOf((*MockIClient)(nil).DeployImage), osname, imgRef, kargs, rpmOstreeClient, ibi)
+}
+
 // GetDeployment mocks base method.
 func (m *MockIClient) GetDeployment(osname string) (string, error) {
 	m.ctrl.T.Helper()

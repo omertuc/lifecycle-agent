@@ -15,6 +15,7 @@ import (
 type IClient interface {
 	PullLocal(repoPath string) error
 	OSInit(osname string) error
+	DeployImage(osname, imgRef string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error
 	Deploy(osname, refsepc string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error
 	Undeploy(ostreeIndex int) error
 	SetDefaultDeployment(index int) error
@@ -56,6 +57,37 @@ func (c *Client) OSInit(osname string) error {
 	if _, err := c.executor.Execute("ostree", append(args, osname)...); err != nil {
 		return fmt.Errorf("failed to run OSInit with args %s: %w", args, err)
 	}
+	return nil
+}
+
+func (c *Client) DeployImage(osname, imgRef string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error {
+	fullImgRef := fmt.Sprintf("ostree-unverified-registry:%s", imgRef)
+	args := []string{"container", "image", "deploy", "--stateroot", osname, "--imgref", fullImgRef}
+	if c.ibi {
+		args = append(args, "--sysroot", "/mnt")
+	}
+	args = append(args, kargs...)
+	// JAVI
+	// if !c.ibi && c.IsOstreeAdminSetDefaultFeatureEnabled() {
+	// 	args = append(args, "--not-as-default")
+	// }
+
+	// Run the command in bash to preserve the quoted kargs
+	args = append([]string{"ostree"}, args...)
+	if _, err := c.executor.Execute("bash", "-c", strings.Join(args, " ")); err != nil {
+		return fmt.Errorf("failed to run OSInit with args %s: %w", args, err)
+	}
+
+	if !ibi {
+		// In an IBU where both releases have the same underlying rhcos image, the parent commit of the deployment has
+		// unique commit IDs (due to import from seed), but the same checksum. In order to avoid pruning the original parent
+		// commit and corrupting the ostree, the previous "ostree admin deploy" command was called with the "--no-prune" option.
+		// This must also be followed up with a call to "rpm-ostree cleanup -b" to update the base refs.
+		if err := rpmOstreeClient.RpmOstreeCleanup(); err != nil {
+			return fmt.Errorf("failed rpm-ostree cleanup -b: %w", err)
+		}
+	}
+
 	return nil
 }
 
