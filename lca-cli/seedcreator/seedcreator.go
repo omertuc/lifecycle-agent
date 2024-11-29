@@ -24,18 +24,17 @@ import (
 	runtime "sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	controller_utils "github.com/openshift-kni/lifecycle-agent/controllers/utils"
 	"github.com/openshift-kni/lifecycle-agent/internal/common"
 	"github.com/openshift-kni/lifecycle-agent/lca-cli/ops"
 	ostree "github.com/openshift-kni/lifecycle-agent/lca-cli/ostreeclient"
 	"github.com/openshift-kni/lifecycle-agent/lca-cli/seedclusterinfo"
 	"github.com/openshift-kni/lifecycle-agent/utils"
+	_ "embed"
 )
 
-// containerFileContent is the Dockerfile content for the IBU seed image
-const containerFileContent = `
-FROM scratch
-COPY . /
-`
+//go:embed Containerfile
+var containerFileContent string
 
 // SeedCreator TODO: move params to Options
 type SeedCreator struct {
@@ -533,6 +532,25 @@ func (s *SeedCreator) backupMCOConfig() error {
 	return nil
 }
 
+func getOsImageURL(statusRpmOstree *ostree.Status) (string, error) {
+	data, err := os.ReadFile(common.MCDCurrentConfig)
+	if err != nil {
+		return "", fmt.Errorf("unable to read MCD currentconfig: %w", err)
+	}
+
+	var mc mcv1.MachineConfig
+
+	if err := json.Unmarshal(data, &mc); err != nil {
+		return "", fmt.Errorf("unable to parse MCD currentconfig: %w", err)
+	}
+
+	if mc.Spec.OSImageURL == "" {
+		return "", fmt.Errorf("unable to find osimageurl in MCD currentconfig")
+	}
+
+	return mc.Spec.OSImageURL, nil
+}
+
 // Building and pushing OCI image
 func (s *SeedCreator) createAndPushSeedImage(clusterInfo string) error {
 	s.log.Info("Build and push OCI image to ", s.containerRegistry)
@@ -554,6 +572,11 @@ func (s *SeedCreator) createAndPushSeedImage(clusterInfo string) error {
 	}
 	defer os.Remove(tmpfile.Name()) // Clean up the temporary file
 
+	osImageURL, err := getOsImageURL(statusRpmOstree)
+	if err != nil {
+		return fmt.Errorf("failed to get osimageurl from MCD currentconfig: %w", err)
+	}
+
 	// Write the content to the temporary file
 	_, err = tmpfile.WriteString(containerFileContent)
 	if err != nil {
@@ -564,10 +587,15 @@ func (s *SeedCreator) createAndPushSeedImage(clusterInfo string) error {
 	// Build the single OCI image (note: We could include --squash-all option, as well)
 	podmanBuildArgs := []string{
 		"build",
+		// We must use the backed up pull secret and not /var/lib/kubelet/config.json (because
+		// the latter is wiped clean with dummy values before seed generation so that the pull
+		// secret is not leaked in the seed, so it is useless)
+		"--authfile", controller_utils.StoredPullSecret,
 		"--file", tmpfile.Name(),
 		"--tag", s.containerRegistry,
 		"--label", fmt.Sprintf("%s=%d", common.SeedFormatOCILabel, common.SeedFormatVersion),
 		"--label", fmt.Sprintf("%s=%s", common.SeedClusterInfoOCILabel, clusterInfo),
+		"--build-arg", fmt.Sprintf("SEED_STAGE_BASE_IMAGE=%s", osImageURL),
 		s.backupDir,
 	}
 	_, err = s.ops.RunInHostNamespace(

@@ -15,6 +15,7 @@ import (
 type IClient interface {
 	PullLocal(repoPath string) error
 	OSInit(osname string) error
+	DeployImage(osname, imgRef string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error
 	Deploy(osname, refsepc string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error
 	Undeploy(ostreeIndex int) error
 	SetDefaultDeployment(index int) error
@@ -56,6 +57,32 @@ func (c *Client) OSInit(osname string) error {
 	if _, err := c.executor.Execute("ostree", append(args, osname)...); err != nil {
 		return fmt.Errorf("failed to run OSInit with args %s: %w", args, err)
 	}
+	return nil
+}
+
+func (c *Client) DeployImage(osname, imgRef string, kargs []string, rpmOstreeClient rpmostreeclient.IClient, ibi bool) error {
+	args := []string{
+		"run", "--privileged",
+		"--env", "RUST_LOG=trace",
+		"-v", "/:/target",
+		"-v", "/boot:/target/sysroot/boot",
+		"-v", "/var/tmp:/var/tmp",
+		"-v", "/var/lib/containers/storage:/var/lib/containers/storage",
+		"--pid=host", "-it",
+		imgRef,
+		"bootc", "install", "to-existing-root",
+		"--acknowledge-destructive",
+		"--stateroot", osname,
+	}
+
+	args = append(args, kargs...)
+
+	// Run the command in bash to preserve the quoted kargs
+	args = append([]string{"podman"}, args...)
+	if _, err := c.executor.Execute("bash", "-c", strings.Join(args, " ")); err != nil {
+		return fmt.Errorf("failed to run bootc with args %s: %w", args, err)
+	}
+
 	return nil
 }
 
